@@ -516,7 +516,7 @@ export type ElectricityDashboardProps = {
   valueDisplay: { suffix: string; decimals: number };
 };
 
-// ✅ New: explicit view types
+// explicit view types
 type ViewAs =
   | "rolling30_avg"
   | "daily"
@@ -539,6 +539,8 @@ export default function ElectricityDashboard(props: ElectricityDashboardProps) {
   } = props;
 
   const STORAGE_KEY = `tusk_india_${type}_v1`;
+  const isSumTab = calcMode === "sum"; // Generation/Demand/Supply
+  const isAvgTab = calcMode === "avg"; // Coal PLF / RTM
 
   const fmtValue = (x: number | null | undefined) => {
     if (x == null || Number.isNaN(x)) return "—";
@@ -586,7 +588,7 @@ export default function ElectricityDashboard(props: ElectricityDashboardProps) {
   const [msg, setMsg] = useState<string | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
 
-  // ✅ Default "24 Months" ON for all tabs
+  // default "24 Months" ON for all tabs
   const [rangeDays, setRangeDays] = useState(730);
 
   const [fetchStatus, setFetchStatus] = useState<string | null>(null);
@@ -594,21 +596,66 @@ export default function ElectricityDashboard(props: ElectricityDashboardProps) {
   const [fromIso, setFromIso] = useState("");
   const [toIso, setToIso] = useState("");
 
-  // ✅ Default View as: "Last 30 Days Rolling Avg (YoY Growth)" for all tabs
+  // Default View as: rolling avg (first option)
   const [aggFreq, setAggFreq] = useState<ViewAs>("rolling30_avg");
 
-  const [showUnitsSeries, setShowUnitsSeries] = useState(true);
-  const [showPrevYearSeries, setShowPrevYearSeries] = useState(true);
+  /* =========================================================
+     ✅ DEFAULT TOGGLE STATES (per tab type) — REQUIRED CHANGE
+     - SUM tabs: YoY% only ON, control lines ON, all else OFF
+     - AVG tabs: AVG current ON, control lines ON, all else OFF
+  ========================================================= */
 
-  // ✅ Default "YoY" ON for all tabs
-  const [showYoYSeries, setShowYoYSeries] = useState(true);
+  const [showUnitsSeries, setShowUnitsSeries] = useState<boolean>(() => {
+    // AVG tabs: "AVG current" ON by default
+    // SUM tabs: totals OFF by default (YoY% only)
+    return isAvgTab;
+  });
 
-  const [showMoMSeries, setShowMoMSeries] = useState(true);
-  const [showControlLines, setShowControlLines] = useState(false);
+  const [showPrevYearSeries, setShowPrevYearSeries] = useState<boolean>(() => {
+    // always OFF by default for all tabs (per requirement)
+    return false;
+  });
+
+  const [showYoYSeries, setShowYoYSeries] = useState<boolean>(() => {
+    // SUM tabs: YoY ON by default
+    // AVG tabs: YoY OFF by default
+    return isSumTab;
+  });
+
+  const [showMoMSeries, setShowMoMSeries] = useState<boolean>(() => {
+    // always OFF by default
+    return false;
+  });
+
+  const [showControlLines, setShowControlLines] = useState<boolean>(() => {
+    // always ON by default (both cases)
+    return true;
+  });
 
   const [tablePeriod, setTablePeriod] = useState<"monthly" | "weekly" | "yearly">("monthly");
 
   const fileRef = useRef<HTMLInputElement | null>(null);
+
+  // Ensure defaults apply on open/reload AND remain correct if component ever re-mounts
+  useEffect(() => {
+    // On mount (tab open/reload):
+    // SUM tabs -> YoY only + control lines ON
+    // AVG tabs -> AVG current + control lines ON
+    if (isSumTab) {
+      setShowUnitsSeries(false);
+      setShowPrevYearSeries(false);
+      setShowYoYSeries(true);
+      setShowMoMSeries(false);
+      setShowControlLines(true);
+    } else {
+      setShowUnitsSeries(true);
+      setShowPrevYearSeries(false);
+      setShowYoYSeries(false);
+      setShowMoMSeries(false);
+      setShowControlLines(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // run once per tab instance
 
   useEffect(() => {
     document.title = title;
@@ -680,8 +727,6 @@ export default function ElectricityDashboard(props: ElectricityDashboardProps) {
 
   const monthAggMap = useMemo(() => buildMonthAggMap(sortedDaily), [sortedDaily]);
 
-  // ✅ For sum tabs (Generation/Demand/Supply): add new Rolling Avg option,
-  //    keep Rolling Sum option. For avg tabs, Rolling Avg already exists.
   const supportsRollingSum = calcMode === "sum";
 
   const dailyForChart = useMemo<DailyChartPoint[]>(() => {
@@ -715,7 +760,6 @@ export default function ElectricityDashboard(props: ElectricityDashboardProps) {
     const isRollingAvg = aggFreq === "rolling30_avg";
     const isRollingSum = aggFreq === "rolling30_sum";
 
-    // Daily
     if (aggFreq === "daily") {
       const sameDayPrevYear = (iso: string) => `${Number(iso.slice(0, 4)) - 1}${iso.slice(4)}`;
       const sameDayPrevMonth = (iso: string) => {
@@ -743,7 +787,6 @@ export default function ElectricityDashboard(props: ElectricityDashboardProps) {
       });
     }
 
-    // Rolling 30 (Avg or Sum)
     if (isRollingAvg || isRollingSum) {
       const points: DailyChartPoint[] = [];
       let cur = f;
@@ -778,7 +821,6 @@ export default function ElectricityDashboard(props: ElectricityDashboardProps) {
       return points;
     }
 
-    // Weekly
     if (aggFreq === "weekly") {
       const startW = startOfWeekISO(f);
       const endW = startOfWeekISO(t);
@@ -826,7 +868,6 @@ export default function ElectricityDashboard(props: ElectricityDashboardProps) {
       });
     }
 
-    // Monthly
     const startYM = monthKey(f);
     const endYM = monthKey(t);
 
@@ -860,7 +901,6 @@ export default function ElectricityDashboard(props: ElectricityDashboardProps) {
     });
   }, [sortedDaily, dailyLookup, fromIso, toIso, rangeDays, aggFreq, calcMode, monthAggMap]);
 
-  // Control lines + domains based on shown series
   const controlStatsLeft = useMemo(() => {
     if (!showControlLines) return null;
     if (!dailyForChart.length) return null;
@@ -942,7 +982,6 @@ export default function ElectricityDashboard(props: ElectricityDashboardProps) {
     return computeDomain(vals, 0.05, 1);
   }, [dailyForChartWithControl, showYoYSeries, showMoMSeries, showControlLines]);
 
-  // Monthly aggregates for Monthly totals+growth chart + monthly table:
   const monthlyAgg = useMemo(() => {
     return calcMode === "sum" ? toMonthlySumComparable(sortedDaily) : toMonthlyAvgFull(sortedDaily);
   }, [sortedDaily, calcMode]);
@@ -958,7 +997,6 @@ export default function ElectricityDashboard(props: ElectricityDashboardProps) {
     }));
   }, [monthlyAgg]);
 
-  // Mean for monthly bar chart
   const monthlyChartMean = useMemo(() => {
     if (!monthlyForChart.length) return null;
     const vals = monthlyForChart
@@ -970,7 +1008,6 @@ export default function ElectricityDashboard(props: ElectricityDashboardProps) {
 
   const kpis = useMemo(() => computeKPIs(sortedDaily, calcMode), [sortedDaily, calcMode]);
 
-  // Weekly/Yearly rows for periodicity table
   const weeklyRows = useMemo(() => {
     if (!sortedDaily.length) return [];
 
@@ -1119,10 +1156,6 @@ export default function ElectricityDashboard(props: ElectricityDashboardProps) {
 
   const hasData = sortedDaily.length > 0;
 
-  /* -----------------------------
-     Actions
-  ----------------------------- */
-
   function upsertOne() {
     setMsg(null);
     setErrors([]);
@@ -1251,7 +1284,7 @@ export default function ElectricityDashboard(props: ElectricityDashboardProps) {
           </div>
         </div>
 
-        {/* ✅ Daily card moved to TOP (all tabs) */}
+        {/* Daily card */}
         <div className="mt-6 grid grid-cols-1 gap-4">
           <Card
             title={`Daily ${seriesLabel.toLowerCase()}`}
@@ -1275,7 +1308,6 @@ export default function ElectricityDashboard(props: ElectricityDashboardProps) {
                     <option value={60}>Last 60 days</option>
                     <option value={120}>Last 120 days</option>
                     <option value={365}>Last 12 months</option>
-                    {/* ✅ Default set to 24 months */}
                     <option value={730}>Last 24 months</option>
                     <option value={1825}>Last 5 years</option>
                     <option value={3650}>Last 10 years</option>
@@ -1327,14 +1359,10 @@ export default function ElectricityDashboard(props: ElectricityDashboardProps) {
                           onChange={(e) => setAggFreq(e.target.value as ViewAs)}
                           className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
                         >
-                          {/* ✅ Requirement: Rolling Avg FIRST + default selection */}
                           <option value="rolling30_avg">{rollingAvgLabel}</option>
-
                           <option value="daily">Daily</option>
                           <option value="weekly">{calcMode === "avg" ? "Weekly (Avg)" : "Weekly (Sum)"}</option>
                           <option value="monthly">{calcMode === "avg" ? "Monthly (Avg)" : "Monthly (Sum)"}</option>
-
-                          {/* ✅ Only Generation/Demand/Supply (sum tabs) show Rolling Sum */}
                           {supportsRollingSum ? (
                             <option value="rolling30_sum">{rollingSumLabel}</option>
                           ) : null}
@@ -1511,9 +1539,7 @@ export default function ElectricityDashboard(props: ElectricityDashboardProps) {
 
                           return [v, String(name)];
                         }}
-                        labelFormatter={(l: any) =>
-                          `Label: ${l}`
-                        }
+                        labelFormatter={(l: any) => `Label: ${l}`}
                       />
                       <Legend />
 
@@ -1560,7 +1586,7 @@ export default function ElectricityDashboard(props: ElectricityDashboardProps) {
           </Card>
         </div>
 
-        {/* ✅ Now the lower sections appear BELOW Daily: Add/Update -> Quick Stats -> Recent Entries */}
+        {/* Add / Update + Quick Stats + Recent Entries below daily */}
         <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
           <Card title="Add / Update a day">
             <div className="grid grid-cols-1 gap-3">
@@ -1806,6 +1832,15 @@ export default function ElectricityDashboard(props: ElectricityDashboardProps) {
             right={
               <div className="flex items-center gap-2">
                 <span className="text-xs text-slate-500">Periodicity</span>
+                <select
+                  value={"monthly"}
+                  onChange={() => {}}
+                  className="rounded-xl border border-slate-200 bg-white px-2 py-1 text-sm text-slate-700 opacity-0 pointer-events-none"
+                >
+                  <option value="monthly">Monthly</option>
+                </select>
+
+                {/* keep existing dropdown behavior (if you had it) */}
                 <select
                   value={tablePeriod}
                   onChange={(e) => setTablePeriod(e.target.value as any)}
