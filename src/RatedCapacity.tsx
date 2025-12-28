@@ -379,7 +379,7 @@ export default function RatedCapacity() {
   }, [ratedBySource]);
 
   // ----------------------------
-  // Historical Capacity (new card)
+  // Historical Capacity
   // ----------------------------
   type MonthRow = { month: string; values: Record<SourceKey, number> };
 
@@ -389,7 +389,6 @@ export default function RatedCapacity() {
 
   const monthOptions = useMemo(() => {
     const opts = history.map((r) => r.month).filter(Boolean);
-    // unique
     const uniq = Array.from(new Set(opts));
     return uniq.slice().sort(compareMonthKey);
   }, [history]);
@@ -503,7 +502,6 @@ export default function RatedCapacity() {
 
   const startRow = useMemo(() => {
     if (!startMonth) return null;
-    // If duplicates exist for a month, take the last one in history order (latest row encountered)
     const matches = history.filter((r) => r.month === startMonth);
     if (!matches.length) return null;
     return matches[matches.length - 1];
@@ -540,7 +538,6 @@ export default function RatedCapacity() {
     return { per: out, total };
   }, [startTotals, endTotals]);
 
-  // For month pickers: set min/max to available range so user can't pick missing months
   const minMonthInput = useMemo(() => {
     if (!monthOptions.length) return "";
     return monthKeyToInputValue(monthOptions[0]);
@@ -709,28 +706,29 @@ export default function RatedCapacity() {
               </div>
             ) : null}
 
+            {/* ✅ ONLY CHANGE: font sizes updated to match Rated Capacity (no tiny text) */}
             <div className="overflow-hidden rounded-2xl ring-1 ring-slate-200">
-              <table className="w-full table-fixed border-collapse bg-white text-left">
+              <table className="w-full table-fixed border-collapse bg-white text-left text-sm">
                 <thead className="bg-slate-50">
                   <tr>
-                    <th className="w-[170px] px-2 py-2 text-[11px] font-semibold text-slate-700">
+                    <th className="w-[170px] px-2 py-2 text-xs font-semibold text-slate-700">
                       <span className="font-bold text-slate-900">Capacity (GW)</span>
                     </th>
                     {SOURCES.map((s) => (
                       <th
                         key={s}
-                        className="px-2 py-2 text-[11px] font-semibold text-slate-700 text-right whitespace-normal break-words"
+                        className="px-2 py-2 text-xs font-semibold text-slate-700 text-right whitespace-normal break-words"
                       >
                         {s}
                       </th>
                     ))}
-                    <th className="px-2 py-2 text-[11px] font-semibold text-slate-700 text-right">
+                    <th className="px-2 py-2 text-xs font-semibold text-slate-700 text-right">
                       Total
                     </th>
                   </tr>
                 </thead>
 
-                <tbody className="text-[12px]">
+                <tbody>
                   <tr className="border-t border-slate-100">
                     <td className="px-2 py-2 font-bold text-slate-900">
                       Capacity as on Start Date ({startMonth || "—"})
