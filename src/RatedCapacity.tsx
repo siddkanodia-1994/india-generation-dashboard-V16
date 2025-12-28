@@ -171,7 +171,6 @@ function normalizeHeader(h: string) {
 }
 
 /**
- * ✅ UPDATED:
  * Accepts:
  *  - MM/YYYY or M/YYYY
  *  - DD/MM/YYYY or D/M/YYYY (treated as monthly -> MM/YYYY)
@@ -197,7 +196,7 @@ function normalizeMonth(m: string) {
     return `${mm}/${yyyy}`;
   }
 
-  // DD/MM/YY  -> assume 20YY
+  // DD/MM/YY -> 20YY
   r = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/);
   if (r) {
     const mm = String(Number(r[2])).padStart(2, "0");
@@ -213,7 +212,7 @@ function normalizeMonth(m: string) {
     return `${mm}/${yyyy}`;
   }
 
-  // DD-MM-YY  -> assume 20YY
+  // DD-MM-YY -> 20YY
   r = t.match(/^(\d{1,2})-(\d{1,2})-(\d{2})$/);
   if (r) {
     const mm = String(Number(r[2])).padStart(2, "0");
@@ -244,6 +243,22 @@ async function fetchTextWithFallback(paths: string[]) {
     }
   }
   throw lastErr || new Error("All fallbacks failed");
+}
+
+/** MM/YYYY -> YYYY-MM for <input type="month" /> */
+function monthKeyToInputValue(mk: string) {
+  const [mm, yyyy] = (mk || "").split("/");
+  if (!mm || !yyyy) return "";
+  return `${yyyy}-${mm}`;
+}
+
+/** YYYY-MM -> MM/YYYY */
+function inputValueToMonthKey(v: string) {
+  const m = (v || "").match(/^(\d{4})-(\d{2})$/);
+  if (!m) return "";
+  const yyyy = m[1];
+  const mm = m[2];
+  return `${mm}/${yyyy}`;
 }
 
 export default function RatedCapacity() {
@@ -374,7 +389,9 @@ export default function RatedCapacity() {
 
   const monthOptions = useMemo(() => {
     const opts = history.map((r) => r.month).filter(Boolean);
-    return opts.slice().sort(compareMonthKey);
+    // unique
+    const uniq = Array.from(new Set(opts));
+    return uniq.slice().sort(compareMonthKey);
   }, [history]);
 
   const latestMonth = useMemo(() => {
@@ -408,7 +425,6 @@ export default function RatedCapacity() {
 
         const normHeaders = header.map(normalizeHeader);
 
-        // ✅ UPDATED: accept Month OR Date OR Capacity (GW) as the month/date column
         const monthIdx = normHeaders.findIndex(
           (h) => h === "month" || h === "date" || h === "capacity (gw)" || h === "capacity(gw)"
         );
@@ -444,7 +460,7 @@ export default function RatedCapacity() {
 
           if (!parsed.length) {
             setHistoryError(
-              `Loaded ${path} but found 0 valid rows. Ensure the first column is Month/Date and has values like MM/YYYY or DD/MM/YY.`
+              `Loaded ${path} but found 0 valid rows. Ensure Month/Date values are MM/YYYY or DD/MM/YY.`
             );
           }
         }
@@ -487,12 +503,17 @@ export default function RatedCapacity() {
 
   const startRow = useMemo(() => {
     if (!startMonth) return null;
-    return history.find((r) => r.month === startMonth) || null;
+    // If duplicates exist for a month, take the last one in history order (latest row encountered)
+    const matches = history.filter((r) => r.month === startMonth);
+    if (!matches.length) return null;
+    return matches[matches.length - 1];
   }, [history, startMonth]);
 
   const endRow = useMemo(() => {
     if (!endMonth) return null;
-    return history.find((r) => r.month === endMonth) || null;
+    const matches = history.filter((r) => r.month === endMonth);
+    if (!matches.length) return null;
+    return matches[matches.length - 1];
   }, [history, endMonth]);
 
   const startTotals = useMemo(() => {
@@ -518,6 +539,20 @@ export default function RatedCapacity() {
     const total = startTotals && endTotals ? round2(endTotals.total - startTotals.total) : 0;
     return { per: out, total };
   }, [startTotals, endTotals]);
+
+  // For month pickers: set min/max to available range so user can't pick missing months
+  const minMonthInput = useMemo(() => {
+    if (!monthOptions.length) return "";
+    return monthKeyToInputValue(monthOptions[0]);
+  }, [monthOptions]);
+
+  const maxMonthInput = useMemo(() => {
+    if (!monthOptions.length) return "";
+    return monthKeyToInputValue(monthOptions[monthOptions.length - 1]);
+  }, [monthOptions]);
+
+  const startMonthInputValue = useMemo(() => monthKeyToInputValue(startMonth), [startMonth]);
+  const endMonthInputValue = useMemo(() => monthKeyToInputValue(endMonth), [endMonth]);
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -625,54 +660,42 @@ export default function RatedCapacity() {
           </Card>
 
           {/* ===========================
-              Historical Capacity (NEW)
+              Historical Capacity
               =========================== */}
           <Card title="Historical Capacity" right={<div className="text-xs text-slate-500">GW</div>}>
             <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <div className="text-xs font-medium text-slate-600">Start Month/Year</div>
-                <select
-                  value={startMonth}
-                  onChange={(e) => setStartMonth(e.target.value)}
+                <input
+                  type="month"
+                  value={startMonthInputValue}
+                  min={minMonthInput}
+                  max={endMonthInputValue || maxMonthInput}
+                  onChange={(e) => {
+                    const mk = inputValueToMonthKey(e.target.value);
+                    const clamped = mk ? clampMonthKeyToOptions(mk, monthOptions) : "";
+                    if (!clamped) return;
+                    setStartMonth(clamped);
+                  }}
                   className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-slate-300"
-                >
-                  {monthOptions.length ? (
-                    monthOptions.map((m) => (
-                      <option
-                        key={m}
-                        value={m}
-                        disabled={endMonth ? compareMonthKey(m, endMonth) > 0 : false}
-                      >
-                        {m}
-                      </option>
-                    ))
-                  ) : (
-                    <option value="">No data</option>
-                  )}
-                </select>
+                />
               </div>
 
               <div>
                 <div className="text-xs font-medium text-slate-600">End Month/Year</div>
-                <select
-                  value={endMonth}
-                  onChange={(e) => setEndMonth(e.target.value)}
+                <input
+                  type="month"
+                  value={endMonthInputValue}
+                  min={startMonthInputValue || minMonthInput}
+                  max={maxMonthInput}
+                  onChange={(e) => {
+                    const mk = inputValueToMonthKey(e.target.value);
+                    const clamped = mk ? clampMonthKeyToOptions(mk, monthOptions) : "";
+                    if (!clamped) return;
+                    setEndMonth(clamped);
+                  }}
                   className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-slate-300"
-                >
-                  {monthOptions.length ? (
-                    monthOptions.map((m) => (
-                      <option
-                        key={m}
-                        value={m}
-                        disabled={startMonth ? compareMonthKey(m, startMonth) < 0 : false}
-                      >
-                        {m}
-                      </option>
-                    ))
-                  ) : (
-                    <option value="">No data</option>
-                  )}
-                </select>
+                />
               </div>
             </div>
 
@@ -753,7 +776,9 @@ export default function RatedCapacity() {
                     })}
                     <td
                       className={`px-2 py-2 text-right font-semibold tabular-nums ${
-                        startTotals && endTotals ? netColorClass(netAdditions.total) : "text-slate-700"
+                        startTotals && endTotals
+                          ? netColorClass(netAdditions.total)
+                          : "text-slate-700"
                       }`}
                     >
                       {startTotals && endTotals
