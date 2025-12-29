@@ -167,10 +167,22 @@ function pctColorClass(x: number | null | undefined) {
 
 /* -----------------------------
    CSV parsing
-   - Accepts: date,<value> with any 2nd column name.
+   - Accepts:
+     1) legacy: date,<value> with any 2nd column name
+     2) new: date,total,coal,renewable (and more columns)
+   - Reads column based on valueColumnKey if header exists
 ----------------------------- */
 
-function csvParse(text: string) {
+function normalizeKey(s: string) {
+  return (s || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/–/g, "-")
+    .replace(/—/g, "-");
+}
+
+function csvParse(text: string, valueColumnKey: string) {
   const lines = text
     .split(/\r?\n/)
     .map((l) => l.trim())
@@ -182,17 +194,30 @@ function csvParse(text: string) {
     if (cols.length >= 2) rows.push(cols);
   }
 
-  // Optional header: if col0 contains "date", drop it.
-  if (rows.length) {
-    const h0 = (rows[0][0] || "").toLowerCase();
-    if (h0.includes("date")) rows.shift();
+  // empty
+  if (!rows.length) return { parsed: [] as Array<{ date: string; value: number }>, errors: [] as string[] };
+
+  // Optional header: if col0 contains "date", drop it and locate value column
+  let valueIdx = 1; // fallback legacy: 2nd col
+  const h0 = (rows[0][0] || "").toLowerCase();
+  const hasHeader = h0.includes("date");
+
+  if (hasHeader) {
+    const header = rows[0].map((h) => normalizeKey(h));
+    const want = normalizeKey(valueColumnKey);
+    const found = header.indexOf(want);
+    if (found !== -1) valueIdx = found;
+    rows.shift();
   }
 
   const parsed: Array<{ date: string; value: number }> = [];
   const errors: string[] = [];
 
   for (let i = 0; i < rows.length; i++) {
-    const [dRaw, vRaw] = rows[i];
+    const row = rows[i];
+    const dRaw = row[0];
+    const vRaw = row[valueIdx] ?? row[1] ?? "";
+
     const date = parseInputDate(dRaw);
     const v = Number(String(vRaw).replace(/,/g, ""));
 
@@ -718,7 +743,7 @@ export default function ElectricityDashboard(props: ElectricityDashboardProps) {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const text = await res.text();
 
-        const { parsed, errors: errs } = csvParse(text);
+        const { parsed, errors: errs } = csvParse(text, valueColumnKey);
         if (cancelled) return;
 
         if (!parsed.length) {
@@ -749,7 +774,7 @@ export default function ElectricityDashboard(props: ElectricityDashboardProps) {
     return () => {
       cancelled = true;
     };
-  }, [defaultCsvPath, type]);
+  }, [defaultCsvPath, type, valueColumnKey]);
 
   useEffect(() => {
     const obj = Object.fromEntries(dataMap.entries());
@@ -1258,7 +1283,7 @@ export default function ElectricityDashboard(props: ElectricityDashboardProps) {
 
     try {
       const text = await file.text();
-      const { parsed, errors: errs } = csvParse(text);
+      const { parsed, errors: errs } = csvParse(text, valueColumnKey);
       if (errs.length) setErrors(errs.slice(0, 12));
       if (!parsed.length) {
         setErrors((e) => (e.length ? e : ["No valid rows found in CSV."]));
@@ -1281,7 +1306,7 @@ export default function ElectricityDashboard(props: ElectricityDashboardProps) {
   }
 
   function loadSample() {
-    const { parsed } = csvParse(sampleCSV(valueColumnKey));
+    const { parsed } = csvParse(sampleCSV(valueColumnKey), valueColumnKey);
     setDataMap((prev) => mergeRecords(prev, parsed));
     setMsg("Loaded sample data.");
   }
