@@ -26,20 +26,20 @@ export default function App() {
           </div>
 
           {/* ===========================
-              Generation (NOW WITH SUB-TABS)
+              Generation (SUB-TABS)
               =========================== */}
           <TabPanel>
-            {/* Sub-tabs inside Generation tab (same react-tabs styling) */}
             <Tabs>
               <div className="mt-2">
                 <TabList>
-                  <Tab>Generation</Tab>
-                  <Tab>Coal</Tab>
+                  {/* 🔁 LABEL CHANGES ONLY */}
+                  <Tab>Total</Tab>
+                  <Tab>Thermal</Tab>
                   <Tab>Renewable</Tab>
                 </TabList>
               </div>
 
-              {/* Generation = total */}
+              {/* Total = total */}
               <TabPanel>
                 <ElectricityDashboard
                   type="generation"
@@ -58,7 +58,7 @@ export default function App() {
                 />
               </TabPanel>
 
-              {/* Coal = coal */}
+              {/* Thermal = coal (LABEL ONLY CHANGED) */}
               <TabPanel>
                 <ElectricityDashboard
                   type="generation-coal"
